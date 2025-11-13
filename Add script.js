@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Star Music Player — Star OS</title>
+<style>
+  /* ---------- Theme variables ---------- */
+  :root{
+    --bg-1: #081018;
+    --bg-2: #0f1a2b;
+    --accent: #6be7ff;      /* cyan accent (Harmony-like) */
+    --accent-2: #8a6bff;    /* violet accent (Samsung vibe) */
+    --glass: rgba(255,255,255,0.04);
+    --card: rgba(255,255,255,0.03);
+    --muted: rgba(255,255,255,0.6);
+    --round: 14px;
+    --glass-border: rgba(255,255,255,0.06);
+    --shadow: 0 8px 30px rgba(0,0,0,0.6);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+
+  html,body{height:100%;margin:0;background:linear-gradient(135deg,var(--bg-1),var(--bg-2));overflow:hidden;color:#fff}
+  /* Layout */
+  .app{
+    position:relative;
+    width:100%;
+    height:100%;
+    display:grid;
+    grid-template-columns: 420px 1fr;
+    gap:28px;
+    padding:36px;
+    box-sizing:border-box;
+    align-items:stretch;
+  }
+
+  /* Fluid animated background canvas (behind everything) */
+  canvas#bgCanvas{position:fixed;left:0;top:0;width:100%;height:100%;z-index:0;pointer-events:none;filter:blur(18px) contrast(110%) saturate(120%);opacity:0.95}
+
+  /* Left column - Playlist / library card */
+  .sidebar{
+    z-index:2;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:var(--round);
+    padding:20px;
+    box-shadow:var(--shadow);
+    border:1px solid var(--glass-border);
+    height:calc(100% - 72px);
+    display:flex;
+    flex-direction:column;
+  }
+  .brand{
+    display:flex;align-items:center;gap:12px;margin-bottom:8px;
+  }
+  .logo{
+    width:54px;height:54px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#041014;font-size:20px;box-shadow:0 8px 28px rgba(107,231,255,0.06);
+  }
+  .brand h1{font-size:18px;margin:0}
+  .brand p{margin:0;font-size:12px;color:var(--muted)}
+
+  .controls-row{display:flex;gap:8px;margin-top:12px;margin-bottom:12px}
+  .btn{
+    padding:10px 12px;border-radius:12px;background:var(--glass);border:1px solid var(--glass-border);cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;gap:8px;backdrop-filter: blur(6px);
+  }
+  .btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#041014;font-weight:600;border:none;box-shadow:0 8px 20px rgba(138,107,255,0.08)}
+  .btn.icon{width:44px;height:44px;justify-content:center;padding:0}
+
+  .playlist{
+    margin-top:12px;overflow:auto;padding-right:8px;
+  }
+  .track{
+    display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;margin-bottom:6px;cursor:pointer;border:1px solid transparent;
+  }
+  .track:hover{background:rgba(255,255,255,0.02)}
+  .track .meta{display:flex;flex-direction:column}
+  .track .title{font-weight:600}
+  .track .artist{font-size:12px;color:var(--muted);margin-top:4px}
+  .track.playing{background:linear-gradient(90deg, rgba(107,231,255,0.06), rgba(138,107,255,0.03));border:1px solid rgba(107,231,255,0.08)}
+
+  /* Right column - Player panel */
+  .player{
+    z-index:2;
+    height:calc(100% - 72px);
+    background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.02));
+    border-radius:var(--round);padding:26px;box-shadow:var(--shadow);border:1px solid var(--glass-border);
+    display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;
+  }
+
+  .now{
+    display:flex;gap:20px;align-items:center;
+  }
+  .cover{
+    width:220px;height:220px;border-radius:20px;background:linear-gradient(135deg, rgba(107,231,255,0.12), rgba(138,107,255,0.08));display:flex;align-items:center;justify-content:center;font-size:42px;font-weight:800;color:#fff;border:1px solid rgba(255,255,255,0.03);box-shadow:0 18px 60px rgba(10,10,10,0.6);
+    position:relative;overflow:hidden;
+  }
+  .cover img{width:100%;height:100%;object-fit:cover;display:block}
+
+  .now-meta{flex:1;display:flex;flex-direction:column;justify-content:center}
+  .now-meta h2{margin:0;font-size:26px}
+  .now-meta p{margin:6px 0 0 0;color:var(--muted)}
+
+  .seekbar{
+    margin-top:18px;display:flex;align-items:center;gap:12px;
+  }
+  input[type="range"]{
+    -webkit-appearance:none;background:transparent;width:100%;
+  }
+  input[type="range"]::-webkit-slider-runnable-track{height:8px;border-radius:8px;background:linear-gradient(90deg,var(--accent),var(--accent-2));}
+  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:white;box-shadow:0 4px 20px rgba(0,0,0,0.4);margin-top:-5px}
+  .time{font-size:12px;color:var(--muted);width:50px;text-align:center}
+
+  /* transport controls */
+  .transport{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:14px}
+  .transport .big{width:66px;height:66px;border-radius:22px;background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;color:#041014;font-size:22px;font-weight:700;box-shadow:0 14px 40px rgba(107,231,255,0.06)}
+  .transport .small{width:46px;height:46px;border-radius:12px;background:var(--glass);border:1px solid var(--glass-border);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+
+  /* Visualizer / canvas strip */
+  .visualizer{
+    margin-top:16px;height:120px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.015));overflow:hidden;padding:12px;border:1px solid rgba(255,255,255,0.02)
+  }
+  canvas#viz{width:100%;height:100%;display:block}
+
+  /* bottom row: extra controls */
+  .bottom-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
+  .left-tools{display:flex;gap:8px;align-items:center}
+  .right-tools{display:flex;gap:12px;align-items:center}
+  .pill{padding:8px 12px;border-radius:999px;background:var(--card);border:1px solid var(--glass-border);font-size:13px;color:var(--muted)}
+  .muted{color:var(--muted);font-size:13px}
+
+  /* responsive */
+  @media(max-width:980px){
+    .app{grid-template-columns: 1fr;grid-auto-rows:auto;padding:18px;gap:16px}
+    .sidebar{height:auto;order:2}
+    .player{order:1;height:auto}
+    .cover{width:160px;height:160px}
+  }
+</style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+
+<div class="app" id="app">
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">★</div>
+      <div>
+        <h1>Star Music</h1>
+        <p>Star OS • v1 — Fluid Player</p>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <button class="btn primary" id="addFilesBtn">+ Add</button>
+      <button class="btn" id="importBtn">Import</button>
+      <button class="btn" id="clearBtn">Clear</button>
+      <div style="flex:1"></div>
+      <button class="btn icon" id="shuffleBtn">🔀</button>
+      <button class="btn icon" id="repeatBtn">🔁</button>
+    </div>
+
+    <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Playlist</div>
+    <div class="playlist" id="playlist" tabindex="0">
+      <!-- tracks will be injected here -->
+      <div class="muted" style="padding:12px">No files. Click + Add or drag & drop audio files here (mp3, wav, ogg).</div>
+    </div>
+    <div style="margin-top:auto;font-size:12px;color:var(--muted);text-align:center;padding-top:12px">
+      Star Music • Built for Star OS • Drag & Drop to add songs
+    </div>
+  </div>
+
+  <!-- Player -->
+  <div class="player">
+    <div>
+      <div class="now">
+        <div class="cover" id="cover">
+          <img id="coverImg" src="" alt="" style="display:none" />
+          <div id="coverInitial" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:60px;opacity:0.95;color:rgba(255,255,255,0.92)">★</div>
+        </div>
+
+        <div class="now-meta">
+          <h2 id="title">No track loaded</h2>
+          <p id="artist">—</p>
+          <div class="seekbar">
+            <div class="time" id="curTime">00:00</div>
+            <input id="seek" type="range" min="0" max="100" value="0" />
+            <div class="time" id="durTime">00:00</div>
+          </div>
+          <div class="transport">
+            <button class="small" id="prevBtn">⏮</button>
+            <button class="big" id="playBtn">▶</button>
+            <button class="small" id="nextBtn">⏭</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="visualizer">
+        <canvas id="viz"></canvas>
+      </div>
+    </div>
+
+    <div class="bottom-row">
+      <div class="left-tools">
+        <div class="pill">Volume <input id="vol" type="range" min="0" max="100" value="90" style="vertical-align:middle;margin-left:8px"/></div>
+        <div class="pill" id="statusPill">Idle</div>
+      </div>
+
+      <div class="right-tools">
+        <div class="muted">Theme: <strong>Star Dark</strong></div>
+        <div class="muted">Engine: <strong>WebAudio</strong></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<input id="fileInput" type="file" accept="audio/*" multiple style="display:none"/>
+
+<script>
+  /* ---------- Core player logic ---------- */
+  const addFilesBtn = document.getElementById('addFilesBtn');
+  const fileInput = document.getElementById('fileInput');
+  const playlistEl = document.getElementById('playlist');
+  const titleEl = document.getElementById('title');
+  const artistEl = document.getElementById('artist');
+  const playBtn = document.getElementById('playBtn');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const seek = document.getElementById('seek');
+  const curTime = document.getElementById('curTime');
+  const durTime = document.getElementById('durTime');
+  const vol = document.getElementById('vol');
+  const statusPill = document.getElementById('statusPill');
+  const coverImg = document.getElementById('coverImg');
+  const coverInitial = document.getElementById('coverInitial');
+  const coverBox = document.getElementById('cover');
+
+  let audioContext, analyzerNode, sourceNode;
+  let audio = new Audio();
+  audio.crossOrigin = "anonymous";
+  audio.preload = "metadata";
+  let tracks = []; // {name, artist, url, file}
+  let currentIndex = -1;
+  let playing = false;
+  let rafId = null;
+  let shuffle=false, repeat=false;
+
+  // Initialize WebAudio context and analyser for visualizer
+  function ensureAudioContext(){
+    if (!audioContext){
+      audioContext = new (window.AudioContext||window.webkitAudioContext)();
+      analyzerNode = audioContext.createAnalyser();
+      analyzerNode.fftSize = 2048;
+      sourceNode = audioContext.createMediaElementSource(audio);
+      sourceNode.connect(analyzerNode);
+      analyzerNode.connect(audioContext.destination);
+    }
+  }
+
+  // handle file input
+  addFilesBtn.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', e=>{
+    addFiles(Array.from(e.target.files));
+    fileInput.value = '';
+  });
+
+  // drag and drop
+  const app = document.getElementById('app');
+  app.addEventListener('dragover', e => {e.preventDefault(); app.style.opacity=0.98});
+  app.addEventListener('dragleave', e => {app.style.opacity=1});
+  app.addEventListener('drop', e => {
+    e.preventDefault(); app.style.opacity=1;
+    const files = Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('audio/'));
+    if (files.length) addFiles(files);
+  });
+
+  function addFiles(fileList){
+    if (!fileList || !fileList.length) return;
+    // Replace "No files" message if present
+    if (playlistEl.querySelector('.muted')) playlistEl.innerHTML = '';
+    fileList.forEach(file=>{
+      const url = URL.createObjectURL(file);
+      const metaName = file.name.replace(/\.[^/.]+$/, "");
+      const track = {name:metaName, artist: "Unknown", url:url, file:file};
+      tracks.push(track);
+      renderPlaylist();
+    });
+    if (currentIndex===-1) { currentIndex = 0; loadTrack(0); }
+  }
+
+  function renderPlaylist(){
+    playlistEl.innerHTML='';
+    tracks.forEach((t,i)=>{
+      const tr = document.createElement('div');
+      tr.className='track' + (i===currentIndex && playing ? ' playing' : '');
+      tr.innerHTML = `<div style="width:40px;height:40px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:flex;align-items:center;justify-content:center;font-weight:700">${t.name.charAt(0).toUpperCase()}</div>
+                      <div class="meta"><div class="title">${t.name}</div><div class="artist">${t.artist}</div></div>`;
+      tr.addEventListener('click', ()=> { loadTrack(i); play(); });
+      playlistEl.appendChild(tr);
+    });
+  }
+
+  function loadTrack(index){
+    if (index<0 || index>=tracks.length) return;
+    currentIndex = index;
+    const t = tracks[index];
+    audio.src = t.url;
+    titleEl.textContent = t.name;
+    artistEl.textContent = t.artist;
+    // cover
+    coverImg.style.display='none';
+    coverInitial.style.display='flex';
+    try{
+      // attempt to extract cover? skipped - keep initial
+    }catch(e){}
+    // update UI
+    renderPlaylist();
+    statusPill.textContent='Loaded';
+    // metadata handling
+    audio.addEventListener('loadedmetadata', ()=>{
+      seek.max = Math.floor(audio.duration);
+      durTime.textContent = formatTime(audio.duration);
+    });
+  }
+
+  // playback controls
+  playBtn.addEventListener('click', ()=> playing ? pause() : play());
+  prevBtn.addEventListener('click', ()=> prevTrack());
+  nextBtn.addEventListener('click', ()=> nextTrack());
+
+  function play(){
+    if (!audio.src) {
+      if (tracks.length) loadTrack(0); else return;
+    }
+    ensureAudioContext();
+    audio.play().then(()=>{
+      playing=true; playBtn.textContent='⏸'; statusPill.textContent='Playing';
+      startViz();
+    }).catch(err=>{
+      // resume context on interaction if required
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume().then(()=> play());
+      } else {
+        console.error(err);
+      }
+    });
+  }
+  function pause(){
+    audio.pause(); playing=false; playBtn.textContent='▶'; statusPill.textContent='Paused';
+    stopViz();
+  }
+
+  function prevTrack(){
+    if (tracks.length===0) return;
+    if (audio.currentTime>3) { audio.currentTime = 0; return; }
+    if (shuffle) currentIndex = Math.floor(Math.random()*tracks.length);
+    else currentIndex = (currentIndex-1+tracks.length)%tracks.length;
+    loadTrack(currentIndex);
+    play();
+  }
+  function nextTrack(){
+    if (tracks.length===0) return;
+    if (repeat) { audio.currentTime = 0; play(); return; }
+    if (shuffle) currentIndex = Math.floor(Math.random()*tracks.length);
+    else currentIndex = (currentIndex+1)%tracks.length;
+    loadTrack(currentIndex);
+    play();
+  }
+
+  // Seek and time update
+  audio.addEventListener('timeupdate', ()=> {
+    seek.value = Math.floor(audio.currentTime);
+    curTime.textContent = formatTime(audio.currentTime);
+  });
+  seek.addEventListener('input', ()=> { audio.currentTime = seek.value; });
+  audio.addEventListener('ended', ()=> { nextTrack(); });
+
+  // format seconds
+  function formatTime(s){
+    if (!s || isNaN(s)) return '00:00';
+    const mm = Math.floor(s/60).toString().padStart(2,'0');
+    const ss = Math.floor(s%60).toString().padStart(2,'0');
+    return mm+':'+ss;
+  }
+
+  // volume
+  vol.addEventListener('input', ()=> { audio.volume = vol.value/100; });
+
+  // shuffle / repeat
+  document.getElementById('shuffleBtn').addEventListener('click', function(){
+    shuffle = !shuffle; this.style.opacity = shuffle?1:0.55;
+  });
+  document.getElementById('repeatBtn').addEventListener('click', function(){
+    repeat = !repeat; this.style.opacity = repeat?1:0.55;
+  });
+
+  // import & clear
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    tracks = []; currentIndex = -1; audio.pause(); audio.src=''; renderPlaylist(); titleEl.textContent='No track loaded'; artistEl.textContent='—'; statusPill.textContent='Cleared';
+  });
+  document.getElementById('importBtn').addEventListener('click', ()=> alert('Use + Add or drag & drop. Import from cloud not implemented (demo).'));
+
+  /* ---------- Visualizer ---------- */
+  const vizCanvas = document.getElementById('viz');
+  const vizCtx = vizCanvas.getContext('2d');
+  function resizeViz(){ vizCanvas.width = vizCanvas.clientWidth * devicePixelRatio; vizCanvas.height = vizCanvas.clientHeight * devicePixelRatio; vizCtx.scale(devicePixelRatio, devicePixelRatio); }
+  window.addEventListener('resize', resizeViz); resizeViz();
+
+  function startViz(){
+    if (!analyzerNode) return;
+    cancelAnimationFrame(rafId);
+    const bufferLength = analyzerNode.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    function draw() {
+      rafId = requestAnimationFrame(draw);
+      analyzerNode.getByteFrequencyData(dataArray);
+      vizCtx.clearRect(0,0,vizCanvas.clientWidth, vizCanvas.clientHeight);
+      const w = vizCanvas.clientWidth;
+      const h = vizCanvas.clientHeight;
+      const barWidth = w / 64;
+      let x = 0;
+      for (let i=0;i<64;i++){
+        const v = dataArray[i*2] / 255;
+        const barHeight = v * h * 0.9;
+        const grd = vizCtx.createLinearGradient(0,0,0,h);
+        grd.addColorStop(0, 'rgba(107,231,255,0.9)');
+        grd.addColorStop(1, 'rgba(138,107,255,0.6)');
+        vizCtx.fillStyle = grd;
+        vizCtx.fillRect(x, h-barHeight, barWidth*0.8, barHeight);
+        x += barWidth;
+      }
+      // subtle overlay wave
+      vizCtx.globalCompositeOperation='lighter';
+      vizCtx.beginPath();
+      for (let i=0;i<w;i+=6){
+        const index = Math.floor((i/w)*(dataArray.length-1));
+        const y = h/2 - (dataArray[index]/255 - 0.5)*h*0.6;
+        if (i===0) vizCtx.moveTo(i,y); else vizCtx.lineTo(i,y);
+      }
+      vizCtx.strokeStyle = 'rgba(107,231,255,0.12)';
+      vizCtx.lineWidth = 2;
+      vizCtx.stroke();
+      vizCtx.globalCompositeOperation='source-over';
+    }
+    draw();
+  }
+  function stopViz(){ cancelAnimationFrame(rafId); vizCtx.clearRect(0,0,vizCanvas.clientWidth, vizCanvas.clientHeight); }
+
+  /* ---------- Animated fluid background (canvas particles + gradient) ---------- */
+  const bg = document.getElementById('bgCanvas');
+  const bctx = bg.getContext('2d');
+  let particles=[];
+  function resizeBg(){ bg.width = innerWidth * devicePixelRatio; bg.height = innerHeight * devicePixelRatio; bctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
+  window.addEventListener('resize', resizeBg); resizeBg();
+
+  function initParticles(){
+    particles = [];
+    const count = Math.max(30, Math.floor((innerWidth+innerHeight)/40));
+    for (let i=0;i<count;i++){
+      particles.push({
+        x: Math.random()*innerWidth,
+        y: Math.random()*innerHeight,
+        r: 30 + Math.random()*120,
+        vx: (Math.random()-0.5)*0.2,
+        vy: (Math.random()-0.5)*0.2,
+        hue: Math.random()*360
+      });
+    }
+  }
+  initParticles();
+  function drawBg(){
+    bctx.clearRect(0,0,innerWidth,innerHeight);
+    // gradient overlay
+    const g = bctx.createLinearGradient(0,0,innerWidth,innerHeight);
+    g.addColorStop(0, 'rgba(6,12,22,0.45)');
+    g.addColorStop(0.3, 'rgba(8,22,40,0.25)');
+    g.addColorStop(1, 'rgba(6,8,20,0.6)');
+    bctx.fillStyle = g; bctx.fillRect(0,0,innerWidth,innerHeight);
+
+    particles.forEach((p,i)=>{
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < -p.r) p.x = innerWidth+p.r;
+      if (p.x > innerWidth+p.r) p.x = -p.r;
+      if (p.y < -p.r) p.y = innerHeight+p.r;
+      if (p.y > innerHeight+p.r) p.y = -p.r;
+      // soft radial
+      const rg = bctx.createRadialGradient(p.x,p.y,p.r*0.05,p.x,p.y,p.r);
+      const c1 = `hsla(${(p.hue+30)%360},90%,60%,0.06)`;
+      const c2 = `hsla(${(p.hue+160)%360},80%,35%,0.02)`;
+      rg.addColorStop(0,c1); rg.addColorStop(1,c2);
+      bctx.fillStyle = rg;
+      bctx.beginPath();
+      bctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      bctx.fill();
+    });
+
+    // moving stripe
+    const t = Date.now() * 0.00012;
+    for (let i=0;i<3;i++){
+      bctx.globalAlpha = 0.12;
+      bctx.fillStyle = `linear-gradient(90deg, rgba(107,231,255,${0.06+0.02*i}), rgba(138,107,255,${0.02+0.02*i}))`;
+      bctx.beginPath();
+      bctx.ellipse(innerWidth*(0.5+Math.sin(t*(1+i))*0.12), innerHeight*(0.5+Math.cos(t*(1+i))*0.07), innerWidth*0.6, innerHeight*0.16 * (1+i*0.4), 0, 0, Math.PI*2);
+      bctx.fill();
+    }
+    bctx.globalAlpha = 1;
+    requestAnimationFrame(drawBg);
+  }
+  drawBg();
+
+  /* ---------- simple UI/UX polish ---------- */
+  function formatBytes(n){ if (n<1024) return n+' B'; if (n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+
+  // show file size on add (demo)
+  // make sure audio context created on user action: handled in play()
+
+  // attempt to extract file metadata via ID3? skipped for simplicity
+
+  // small keyboard shortcuts
+  window.addEventListener('keydown', e=>{
+    if (e.code==='Space') { e.preventDefault(); playing?pause():play(); }
+    else if (e.code==='ArrowRight') nextTrack();
+    else if (e.code==='ArrowLeft') prevTrack();
+  });
+
+  // add small initial demo tone if no audio loaded
+  document.addEventListener('DOMContentLoaded', ()=>{
+    // show subtle glow animation on play button
+    setInterval(()=> {
+      const g = document.querySelector('.big');
+      if (!g) return;
+      g.style.transform = (playing? 'scale(1.02)':'scale(1.0)');
+    }, 400);
+  });
+
+  /* ---------- end of main script ---------- */
+</script>
+</body>
+</html>
